@@ -324,58 +324,57 @@ with tab1:
     )
     st.plotly_chart(fig_pie, width='stretch')
 
-    # ===================== 月×分类 构成（最终兼容版，100%不报错） =====================
     st.subheader("月×分类 构成")
     pivot = df_f.pivot_table(index="月份", columns="分类", values=amount_col, aggfunc="sum", fill_value=0).sort_index()
     pivot_long = pivot.reset_index().melt(id_vars="月份", var_name="分类", value_name="金额")
     pivot_long = pivot_long[pivot_long["金额"] > 0]
     pivot_long["金额_万元"] = _to_wan(pivot_long["金额"])
 
-    # 先建一个不带任何文本的图，避免残留
+    category_options = ["全部"] + sorted(pivot_long["分类"].unique().tolist())
+    selected_category = st.selectbox("选择查看单项分类", category_options, index=0)
+
+    if selected_category != "全部":
+        pivot_display = pivot_long[pivot_long["分类"] == selected_category]
+    else:
+        pivot_display = pivot_long
+
     fig_stack = px.bar(
-        pivot_long,
+        pivot_display,
         x="月份",
         y="金额_万元",
         color="分类",
-        barmode="stack"
+        barmode="stack",
+        text="金额_万元",
     )
-    # 先清除所有 trace 的文本，防止旧数据残留
-    fig_stack.update_traces(text=None)
+    fig_stack.update_traces(
+        hovertemplate="%{x|%Y-%m}<br>分类=%{fullData.name}<br>金额=%{y:,.2f} 万元<extra></extra>",
+        texttemplate="%{text:.2f}",
+        textposition="inside",
+        textfont=dict(size=10, color="#ffffff"),
+    )
 
-    # 判断当前显示的分类数量
-    # 用 pivot_long 的实际分类数判断，不受图例双击影响
-    unique_cats = pivot_long["分类"].drop_duplicates()
-    if len(unique_cats) == 1:
-        # 只选了一个分类：在柱子内部顶端显示该分类金额
-        fig_stack.update_traces(
-            text=pivot_long["金额_万元"].apply(lambda x: f"{x:.2f}万"),
-            textposition="inside top",
-            textfont=dict(color="#000000", size=11),
-            hovertemplate="%{x|%Y-%m}<br>%{fullData.name}<br>金额=%{y:.2f} 万元"
+    if selected_category == "全部":
+        monthly_stack_total = (
+            pivot_display.groupby("月份", as_index=False)["金额_万元"].sum().sort_values("月份")
         )
-    else:
-        # 选了多个分类：在堆叠顶部显示月度总和
-        total_month = pivot_long.groupby("月份")["金额_万元"].sum().reset_index()
         fig_stack.add_trace(
             go.Scatter(
-                x=total_month["月份"],
-                y=total_month["金额_万元"],
-                text=total_month["金额_万元"].apply(lambda x: f"{x:.2f}万"),
+                x=monthly_stack_total["月份"],
+                y=monthly_stack_total["金额_万元"],
                 mode="text",
+                text=monthly_stack_total["金额_万元"].map("{:.2f}".format),
                 textposition="top center",
-                textfont=dict(color="#000000", size=11),
-                showlegend=False
+                textfont=dict(size=11, color="#222222"),
+                hovertemplate="%{x|%Y-%m}<br>当月总金额=%{y:,.2f} 万元<extra></extra>",
+                showlegend=False,
             )
         )
-        # 给所有 trace 加上统一的 hover 提示
-        fig_stack.update_traces(
-            hovertemplate="%{x|%Y-%m}<br>%{fullData.name}<br>金额=%{y:.2f} 万元"
-        )
 
+    fig_stack.update_layout(legend_itemclick="toggleothers")
     fig_stack.update_xaxes(dtick="M1", tickformat="%Y-%m", tickangle=-45)
     fig_stack.update_yaxes(title_text="金额（万元）", tickformat=",.2f")
-    st.plotly_chart(fig_stack, use_container_width=True)
-    # ============================================================================
+    st.plotly_chart(fig_stack, width='stretch')
+
     st.subheader("导出")
     out = df_f.copy()
     out["月份"] = out["月份"].dt.strftime("%Y-%m")
