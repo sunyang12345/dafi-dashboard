@@ -190,47 +190,48 @@ with tab1:
     fig_pie.update_traces(hovertemplate="%{label}<br>金额=%{customdata:,.2f} 元<br>（%{value:,.2f} 万元）<br>占比=%{percent}", customdata=cat_top_pie[amount_col], textposition='inside', textinfo='percent+label')
     st.plotly_chart(fig_pie, use_container_width=True)
 
-    # ===================== 月×分类 构成（已按你要求修改完成） =====================
-    st.subheader("月×分类 构成")
-    pivot = df_f.pivot_table(index="月份", columns="分类", values=amount_col, aggfunc="sum", fill_value=0).sort_index()
-    pivot_long = pivot.reset_index().melt(id_vars="月份", var_name="分类", value_name="金额")
-    pivot_long = pivot_long[pivot_long["金额"] > 0]
-    pivot_long["金额_万元"] = _to_wan(pivot_long["金额"])
+   # ===================== 月×分类 构成（修复：单选显示单项、全选显示总和）
+st.subheader("月×分类 构成")
+pivot = df_f.pivot_table(index="月份", columns="分类", values=amount_col, aggfunc="sum", fill_value=0).sort_index()
+pivot_long = pivot.reset_index().melt(id_vars="月份", var_name="分类", value_name="金额")
+pivot_long = pivot_long[pivot_long["金额"] > 0]
+pivot_long["金额_万元"] = _to_wan(pivot_long["金额"])
 
-    # 智能标签逻辑：全选显示总和，单选显示自身，数字贴在柱子顶部
-    fig_stack = px.bar(pivot_long, x="月份", y="金额_万元", color="分类", barmode="stack")
+fig_stack = px.bar(pivot_long, x="月份", y="金额_万元", color="分类", barmode="stack")
 
-    selected_cats = cats_selected
-    if len(selected_cats) == 1:
-        # 只选一个分类 → 在柱子内部顶端显示该分类金额
-        fig_stack.update_traces(
-            text=pivot_long["金额_万元"].apply(lambda x: f"{x:.2f}万"),
-            textposition="inside top",
-            textfont=dict(color="#000000", size=11)
-        )
-    else:
-        # 多选 / 全选 → 在堆叠柱子最上方显示月度总和
-        total_month = pivot_long.groupby("月份")["金额_万元"].sum().reset_index()
-        fig_stack.add_trace(
-            go.Scatter(
-                x=total_month["月份"],
-                y=total_month["金额_万元"],
-                text=total_month["金额_万元"].apply(lambda x: f"{x:.2f}万"),
-                mode="text",
-                textposition="top center",
-                textfont=dict(color="#000000", size=11),
-                showlegend=False
-            )
-        )
+# 关键：用实际数据里的分类数，而不是侧边栏选中数
+unique_cats = pivot_long["分类"].unique()
 
-    # 统一悬浮提示
+if len(unique_cats) == 1:
+    # 单选：在柱子内部顶端显示该分类当月金额
     fig_stack.update_traces(
-        hovertemplate="%{x|%Y-%m}<br>%{fullData.name}<br>金额=%{y:,.2f} 万元"
+        text=pivot_long["金额_万元"].apply(lambda x: f"{x:.2f}万"),
+        textposition="inside top",
+        textfont=dict(color="#000000", size=11)
     )
-    fig_stack.update_xaxes(dtick="M1", tickformat="%Y-%m", tickangle=-45)
-    fig_stack.update_yaxes(title_text="金额（万元）", tickformat=",.2f")
-    st.plotly_chart(fig_stack, use_container_width=True)
-    # ============================================================================
+else:
+    # 全选/多选：只在最上方显示月度总和
+    total_month = pivot_long.groupby("月份")["金额_万元"].sum().reset_index()
+    fig_stack.add_trace(
+        go.Scatter(
+            x=total_month["月份"],
+            y=total_month["金额_万元"],
+            text=total_month["金额_万元"].apply(lambda x: f"{x:.2f}万"),
+            mode="text",
+            textposition="top center",
+            textfont=dict(color="#000000", size=11),
+            showlegend=False
+        )
+    )
+
+# 悬浮提示、坐标轴样式
+fig_stack.update_traces(
+    hovertemplate="%{x|%Y-%m}<br>%{fullData.name}<br>金额=%{y:.2f} 万元"
+)
+fig_stack.update_xaxes(dtick="M1", tickformat="%Y-%m", tickangle=-45)
+fig_stack.update_yaxes(title_text="金额（万元）", tickformat=",.2f")
+st.plotly_chart(fig_stack, use_container_width=True)
+# ============================================================================
 
     st.subheader("导出")
     out = df_f.copy()
