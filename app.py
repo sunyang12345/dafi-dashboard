@@ -190,26 +190,34 @@ with tab1:
     fig_pie.update_traces(hovertemplate="%{label}<br>金额=%{customdata:,.2f} 元<br>（%{value:,.2f} 万元）<br>占比=%{percent}", customdata=cat_top_pie[amount_col], textposition='inside', textinfo='percent+label')
     st.plotly_chart(fig_pie, use_container_width=True)
 
-    # ===================== 月×分类 构成（最终修复版，逻辑+缩进都正确） =====================
+    # ===================== 月×分类 构成（终极修复版，彻底解决标签问题） =====================
     st.subheader("月×分类 构成")
     pivot = df_f.pivot_table(index="月份", columns="分类", values=amount_col, aggfunc="sum", fill_value=0).sort_index()
     pivot_long = pivot.reset_index().melt(id_vars="月份", var_name="分类", value_name="金额")
     pivot_long = pivot_long[pivot_long["金额"] > 0]
     pivot_long["金额_万元"] = _to_wan(pivot_long["金额"])
 
-    fig_stack = px.bar(pivot_long, x="月份", y="金额_万元", color="分类", barmode="stack")
+    # 关键：先创建一个完全不带文本的柱状图
+    fig_stack = px.bar(
+        pivot_long, 
+        x="月份", 
+        y="金额_万元", 
+        color="分类", 
+        barmode="stack",
+        text=None  # 强制禁用px.bar自带的文本，避免残留
+    )
 
-    # 核心判断：数据里实际有几个分类
+    # 判断实际分类数
     unique_cats = pivot_long["分类"].drop_duplicates()
     if len(unique_cats) == 1:
-        # 只选了一个分类 → 在柱子内部顶端显示该分类金额
+        # 单选：在柱子内部顶端显示该分类金额
         fig_stack.update_traces(
             text=pivot_long["金额_万元"].apply(lambda x: f"{x:.2f}万"),
             textposition="inside top",
             textfont=dict(color="#000000", size=11)
         )
     else:
-        # 多选/全选 → 在堆叠顶部显示月度总和
+        # 多选/全选：只添加总和标签，不影响其他
         total_month = pivot_long.groupby("月份")["金额_万元"].sum().reset_index()
         fig_stack.add_trace(
             go.Scatter(
@@ -223,7 +231,7 @@ with tab1:
             )
         )
 
-    # 统一悬浮提示和坐标轴样式
+    # 统一悬浮提示
     fig_stack.update_traces(
         hovertemplate="%{x|%Y-%m}<br>%{fullData.name}<br>金额=%{y:.2f} 万元"
     )
