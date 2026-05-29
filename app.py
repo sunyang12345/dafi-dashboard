@@ -8,7 +8,7 @@ from datetime import datetime
 st.set_page_config(
     page_title="运营保障费用支出数据看板",
     layout="wide",
-    icon="📊"
+    page_icon="📊"
 )
 st.title("📊 运营保障费用支出数据看板")
 
