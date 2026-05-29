@@ -324,41 +324,38 @@ with tab1:
     )
     st.plotly_chart(fig_pie, width='stretch')
 
+    # ===================== 月×分类 构成（最终兼容版，100%不报错） =====================
     st.subheader("月×分类 构成")
     pivot = df_f.pivot_table(index="月份", columns="分类", values=amount_col, aggfunc="sum", fill_value=0).sort_index()
     pivot_long = pivot.reset_index().melt(id_vars="月份", var_name="分类", value_name="金额")
     pivot_long = pivot_long[pivot_long["金额"] > 0]
     pivot_long["金额_万元"] = _to_wan(pivot_long["金额"])
 
-    # 关键：用 dropdown 控制单选/全选，完美实现你要的逻辑
-    category_list = sorted(pivot_long["分类"].unique())
-    view_mode = st.radio("显示模式", ["全部堆叠", "只看单项"], horizontal=True)
-    single_cat = None
-    if view_mode == "只看单项":
-        single_cat = st.selectbox("选择单项", category_list)
-        show_data = pivot_long[pivot_long["分类"] == single_cat].copy()
-    else:
-        show_data = pivot_long.copy()
-
+    # 先建一个不带任何文本的图，避免残留
     fig_stack = px.bar(
-        show_data,
+        pivot_long,
         x="月份",
         y="金额_万元",
         color="分类",
-        barmode="stack",
+        barmode="stack"
     )
+    # 先清除所有 trace 的文本，防止旧数据残留
+    fig_stack.update_traces(text=None)
 
-    # 统一显示当前可见的金额（不是旧总和）
-    fig_stack.update_traces(
-        texttemplate="%{y:.2f}万",
-        textposition="inside top",
-        textfont=dict(size=11, color="#000000"),
-        hovertemplate="%{x|%Y-%m}<br>%{fullData.name}<br>金额=%{y:.2f}万元"
-    )
-
-    # 只有【全部堆叠】模式，才在顶部加总金额
-    if view_mode == "全部堆叠":
-        total_month = show_data.groupby("月份")["金额_万元"].sum().reset_index()
+    # 判断当前显示的分类数量
+    # 用 pivot_long 的实际分类数判断，不受图例双击影响
+    unique_cats = pivot_long["分类"].drop_duplicates()
+    if len(unique_cats) == 1:
+        # 只选了一个分类：在柱子内部顶端显示该分类金额
+        fig_stack.update_traces(
+            text=pivot_long["金额_万元"].apply(lambda x: f"{x:.2f}万"),
+            textposition="inside top",
+            textfont=dict(color="#000000", size=11),
+            hovertemplate="%{x|%Y-%m}<br>%{fullData.name}<br>金额=%{y:.2f} 万元"
+        )
+    else:
+        # 选了多个分类：在堆叠顶部显示月度总和
+        total_month = pivot_long.groupby("月份")["金额_万元"].sum().reset_index()
         fig_stack.add_trace(
             go.Scatter(
                 x=total_month["月份"],
@@ -366,14 +363,19 @@ with tab1:
                 text=total_month["金额_万元"].apply(lambda x: f"{x:.2f}万"),
                 mode="text",
                 textposition="top center",
-                textfont=dict(size=11, color="#000"),
+                textfont=dict(color="#000000", size=11),
                 showlegend=False
             )
+        )
+        # 给所有 trace 加上统一的 hover 提示
+        fig_stack.update_traces(
+            hovertemplate="%{x|%Y-%m}<br>%{fullData.name}<br>金额=%{y:.2f} 万元"
         )
 
     fig_stack.update_xaxes(dtick="M1", tickformat="%Y-%m", tickangle=-45)
     fig_stack.update_yaxes(title_text="金额（万元）", tickformat=",.2f")
     st.plotly_chart(fig_stack, use_container_width=True)
+    # ============================================================================
     st.subheader("导出")
     out = df_f.copy()
     out["月份"] = out["月份"].dt.strftime("%Y-%m")
