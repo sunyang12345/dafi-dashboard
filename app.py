@@ -330,51 +330,50 @@ with tab1:
     pivot_long = pivot_long[pivot_long["金额"] > 0]
     pivot_long["金额_万元"] = _to_wan(pivot_long["金额"])
 
-    category_options = ["全部"] + sorted(pivot_long["分类"].unique().tolist())
-    selected_category = st.selectbox("选择查看单项分类", category_options, index=0)
-
-    if selected_category != "全部":
-        pivot_display = pivot_long[pivot_long["分类"] == selected_category]
+    # 关键：用 dropdown 控制单选/全选，完美实现你要的逻辑
+    category_list = sorted(pivot_long["分类"].unique())
+    view_mode = st.radio("显示模式", ["全部堆叠", "只看单项"], horizontal=True)
+    single_cat = None
+    if view_mode == "只看单项":
+        single_cat = st.selectbox("选择单项", category_list)
+        show_data = pivot_long[pivot_long["分类"] == single_cat].copy()
     else:
-        pivot_display = pivot_long
+        show_data = pivot_long.copy()
 
     fig_stack = px.bar(
-        pivot_display,
+        show_data,
         x="月份",
         y="金额_万元",
         color="分类",
         barmode="stack",
-        text="金额_万元",
-    )
-    fig_stack.update_traces(
-        hovertemplate="%{x|%Y-%m}<br>分类=%{fullData.name}<br>金额=%{y:,.2f} 万元<extra></extra>",
-        texttemplate="%{text:.2f}",
-        textposition="inside",
-        textfont=dict(size=10, color="#ffffff"),
     )
 
-    if selected_category == "全部":
-        monthly_stack_total = (
-            pivot_display.groupby("月份", as_index=False)["金额_万元"].sum().sort_values("月份")
-        )
+    # 统一显示当前可见的金额（不是旧总和）
+    fig_stack.update_traces(
+        texttemplate="%{y:.2f}万",
+        textposition="inside top",
+        textfont=dict(size=11, color="#000000"),
+        hovertemplate="%{x|%Y-%m}<br>%{fullData.name}<br>金额=%{y:.2f}万元"
+    )
+
+    # 只有【全部堆叠】模式，才在顶部加总金额
+    if view_mode == "全部堆叠":
+        total_month = show_data.groupby("月份")["金额_万元"].sum().reset_index()
         fig_stack.add_trace(
             go.Scatter(
-                x=monthly_stack_total["月份"],
-                y=monthly_stack_total["金额_万元"],
+                x=total_month["月份"],
+                y=total_month["金额_万元"],
+                text=total_month["金额_万元"].apply(lambda x: f"{x:.2f}万"),
                 mode="text",
-                text=monthly_stack_total["金额_万元"].map("{:.2f}".format),
                 textposition="top center",
-                textfont=dict(size=11, color="#222222"),
-                hovertemplate="%{x|%Y-%m}<br>当月总金额=%{y:,.2f} 万元<extra></extra>",
-                showlegend=False,
+                textfont=dict(size=11, color="#000"),
+                showlegend=False
             )
         )
 
-    fig_stack.update_layout(legend_itemclick="toggleothers")
     fig_stack.update_xaxes(dtick="M1", tickformat="%Y-%m", tickangle=-45)
     fig_stack.update_yaxes(title_text="金额（万元）", tickformat=",.2f")
-    st.plotly_chart(fig_stack, width='stretch')
-
+    st.plotly_chart(fig_stack, use_container_width=True)
     st.subheader("导出")
     out = df_f.copy()
     out["月份"] = out["月份"].dt.strftime("%Y-%m")
